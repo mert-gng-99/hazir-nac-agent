@@ -33,7 +33,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .agent import Agent, Case, Decision
-from .camara import CamaraClient
+from .camara import CamaraClient, CamaraError
 from .config import AppConfig
 from .consent import ConsentLedger
 from .events import EventBus
@@ -194,6 +194,33 @@ def build_platform(spec: IdeaSpec, config: Optional[AppConfig] = None) -> Platfo
     return Platform(spec, config)
 
 
+def _nokia_check(platform: "Platform") -> Dict[str, Any]:
+    """Run the Nokia proof and report exactly what came back.
+
+    A refusal is an answer too. Reporting ``ok: false`` with the reason beats a
+    500, and beats a simulator answer quietly wearing Nokia's name.
+    """
+    try:
+        result = platform.client.nokia_sandbox_probe()
+    except CamaraError as exc:
+        return {
+            "ok": False,
+            "source": "none",
+            "error": str(exc)[:300],
+            "device": CamaraClient.NOKIA_PROBE_DEVICE,
+        }
+    return {
+        "ok": result.source == "nokia-sandbox",
+        "source": result.source,
+        "api": result.api,
+        "endpoint": result.endpoint,
+        "answer": result.data,
+        "latency_ms": result.latency_ms,
+        "device": CamaraClient.NOKIA_PROBE_DEVICE,
+        "error": platform.client.sandbox_error,
+    }
+
+
 def create_app(spec: IdeaSpec, config: Optional[AppConfig] = None) -> FastAPI:
     platform = build_platform(spec, config)
 
@@ -226,6 +253,16 @@ def create_app(spec: IdeaSpec, config: Optional[AppConfig] = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> Dict[str, Any]:
         return platform.health()
+
+    @app.post("/api/nokia-check")
+    async def nokia_check() -> Dict[str, Any]:
+        """One real CAMARA call to Nokia Network as Code, on demand.
+
+        On demand rather than on every scenario: the free tier rate limits
+        hard, and a judged demo should not spend its allowance before anyone
+        clicks anything.
+        """
+        return await asyncio.to_thread(_nokia_check, platform)
 
     @app.get("/api/spec")
     async def get_spec() -> Dict[str, Any]:

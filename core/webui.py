@@ -373,6 +373,31 @@ async function revokeConsent() {
     + ". Run a case on that line now. The agent gets refused at the transport layer.";
 }
 
+async function nokiaCheck() {
+  const note = $("#nokia-note");
+  const button = $("#nokia-check");
+  note.textContent = "Asking Nokia...";
+  button.disabled = true;
+  try {
+    const out = await post("/api/nokia-check", {});
+    if (out.ok) {
+      note.textContent =
+        "Nokia answered " + JSON.stringify(out.answer) + " for " + out.device
+        + " at " + out.endpoint + " in " + out.latency_ms + " ms. "
+        + "Tagged " + out.source + ", which is what the evidence will say.";
+    } else {
+      note.textContent =
+        "Nokia did not answer: " + (out.error || "not configured")
+        + " The demo keeps running on the simulator, and says so.";
+    }
+  } catch (err) {
+    note.textContent = "Nokia did not answer: " + err;
+  } finally {
+    button.disabled = false;
+    refreshProvenance();
+  }
+}
+
 async function grantConsent() {
   const subject = $("#adhoc").value.trim() || (SPEC.demo_lines[0] || {}).msisdn;
   if (!subject) return;
@@ -701,6 +726,7 @@ $("#run-adhoc").addEventListener("click", runAdHoc);
 $("#adhoc").addEventListener("keydown", (e) => { if (e.key === "Enter") runAdHoc(); });
 $("#revoke").addEventListener("click", revokeConsent);
 $("#grant").addEventListener("click", grantConsent);
+$("#nokia-check").addEventListener("click", nokiaCheck);
 $("#reset").addEventListener("click", async () => {
   await post("/api/reset", {});
   $("#decision").innerHTML = '<div class="empty">Ledger cleared. Pick a scenario to start again.</div>';
@@ -838,6 +864,17 @@ _PAGE = """<!doctype html>
         Withdraw it, then run a case on that line: the agent is refused before a
         request is even built.
       </p>
+    </section>
+
+    <section>
+      <div class="section-title">Nokia Network as Code</div>
+      <p class="help" style="margin-top:0">
+        One real CAMARA Location Verification call to Nokia's gateway, asked
+        about a device Nokia publishes for this purpose. The scenarios above
+        answer from the local simulator, so they stay reproducible and cheap.
+      </p>
+      <button id="nokia-check">Ask Nokia Network as Code</button>
+      <p class="help" id="nokia-note">Not asked yet.</p>
     </section>
   </div>
 

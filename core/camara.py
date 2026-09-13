@@ -329,6 +329,7 @@ class CamaraClient:
         }
         try:
             client = NetworkAsCodeApi(
+                base_url=self.config.sandbox_base_url,
                 rapidapi_host=self.config.sandbox_host,
                 api_key=self.config.rapid_key,
                 timeout=self.config.timeout_s,
@@ -727,6 +728,55 @@ class CamaraClient:
     def slice_detach_device(self, attachment_id: str) -> ApiResult:
         return self._call(
             "slice-attach", "detach", "DELETE", "/attachments/" + attachment_id
+        )
+
+    # -- the Nokia proof -----------------------------------------------------
+
+    # Nokia publishes these simulator devices and documents the geometry that
+    # answers TRUE for them. Both numbers are Nokia's, which is the whole point:
+    # the answer is the gateway's answer about its own device, not arithmetic of
+    # ours dressed up as a network result.
+    NOKIA_PROBE_DEVICE = "+99999991001"
+    NOKIA_PROBE_CENTRE = (47.44178899529922, 19.160422047462603)
+    NOKIA_PROBE_RADIUS_M = 50000
+
+    def nokia_sandbox_probe(self) -> ApiResult:
+        """Ask Nokia Network as Code one real Location Verification question.
+
+        Deliberately separate from the scenarios. Nokia's test devices sit at
+        fixed coordinates in Europe, so pointing them at a muster circle on the
+        Red Sea coast would produce an answer that is true about the test device
+        and false about the case; and the free tier rate limits long before
+        eight scenarios finish. So the proof is one call, on Nokia's terms.
+
+        No consent scope is checked, because the subject is a vendor test
+        number published for this purpose and not a person this system owes a
+        consent record to.
+        """
+        if not self.config.nokia_sandbox_enabled:
+            raise CamaraError(
+                "Nokia sandbox is not configured: set NAC_MODE=nokia-sandbox "
+                "and NAC_RAPIDAPI_KEY",
+                api="location-verification",
+                status=0,
+            )
+        lat, lon = self.NOKIA_PROBE_CENTRE
+        return self._call(
+            "location-verification",
+            "verify",
+            "POST",
+            "/verify",
+            body={
+                "device": {"phoneNumber": self.NOKIA_PROBE_DEVICE},
+                "area": {
+                    "areaType": "CIRCLE",
+                    "center": {"latitude": lat, "longitude": lon},
+                    "radius": self.NOKIA_PROBE_RADIUS_M,
+                },
+                "maxAge": 120,
+            },
+            cost_units=2.0,
+            sandbox_device_phone=self.NOKIA_PROBE_DEVICE,
         )
 
     # -- diagnostics ---------------------------------------------------------

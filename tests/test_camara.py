@@ -9,7 +9,7 @@ import sys
 import httpx
 import pytest
 
-from core.camara import CamaraClient, ConsentError, Device
+from core.camara import CamaraClient, CamaraError, ConsentError, Device
 from core.config import API_PREFIX, NacConfig
 from core.consent import ConsentLedger
 from core.simulator import LineProfile, NetworkSimulator
@@ -165,9 +165,11 @@ def test_nokia_sandbox_uses_the_official_sdk_and_keeps_explicit_provenance(
         "verificationResult": "TRUE",
         "sandboxDevice": "+99999991001",
     }
-    # The host header has to agree with the base URL the SDK itself ships,
-    # which is the p-eu RapidAPI gateway, or Nokia refuses the call.
-    assert calls["init"]["rapidapi_host"] == "network-as-code.p-eu.rapidapi.com"
+    # Nokia's console prints this pair: requests go to apihub.nokia.io while
+    # the host header still names the RapidAPI listing. The SDK's own default
+    # points at rapidapi.com and answers 404.
+    assert calls["init"]["base_url"] == "https://network-as-code.p-eu.apihub.nokia.io"
+    assert calls["init"]["rapidapi_host"] == "network-as-code.nokia.rapidapi.com"
     assert calls["verify"]["device"] == {"phone_number": "+99999991001"}
     assert calls["verify"]["area"]["center"] == {"latitude": 41.0, "longitude": 29.0}
     assert client.describe()["effective_source"] == "nokia-sandbox"
@@ -198,11 +200,13 @@ def test_nokia_sandbox_host_can_be_overridden_without_a_code_change(
     monkeypatch.setenv("NAC_MODE", "nokia-sandbox")
     monkeypatch.setenv("NAC_RAPIDAPI_KEY", "test-key")
     monkeypatch.setenv("NAC_SANDBOX_HOST", "network-as-code.example.rapidapi.com")
+    monkeypatch.setenv("NAC_SANDBOX_BASE_URL", "https://example.apihub.nokia.io")
     client = CamaraClient(NacConfig.from_env(), simulator=sim)
     client.location_verify(
         DEVICE, 41.0, 29.0, 500, sandbox_device_phone="+99999991001"
     )
     assert calls["init"]["rapidapi_host"] == "network-as-code.example.rapidapi.com"
+    assert calls["init"]["base_url"] == "https://example.apihub.nokia.io"
 
 
 def test_nokia_sandbox_failure_falls_back_to_the_simulator_and_says_why(
@@ -309,3 +313,40 @@ def test_qod_and_slice_calls_are_the_expensive_ones(client: CamaraClient):
     cheap = client.device_reachability(DEVICE)
     pricey = client.qod_create_session(DEVICE, "QOS_L", 300, "10.0.0.1")
     assert pricey.cost_units > cheap.cost_units
+
+
+def test_nokia_probe_asks_nokia_about_nokias_own_device(sim, monkeypatch):
+    """The proof must use Nokia's device and Nokia's geometry, not a worker."""
+    calls = {}
+
+    class FakeLocation:
+        def verify_v1(self, **kwargs):
+            calls["verify"] = kwargs
+            return SimpleNamespace(
+                verification_result="TRUE", match_rate=None, last_location_time=None
+            )
+
+    class FakeNokiaClient:
+        def __init__(self, **kwargs):
+            self.location = FakeLocation()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "network_as_code",
+        SimpleNamespace(NetworkAsCodeApi=FakeNokiaClient),
+    )
+    client = CamaraClient(
+        NacConfig(mode="nokia-sandbox", rapid_key="test-key"), simulator=sim
+    )
+    result = client.nokia_sandbox_probe()
+
+    assert result.source == "nokia-sandbox"
+    assert calls["verify"]["device"] == {"phone_number": CamaraClient.NOKIA_PROBE_DEVICE}
+    assert CamaraClient.NOKIA_PROBE_DEVICE.startswith("+9999")
+    assert calls["verify"]["area"]["radius"] == CamaraClient.NOKIA_PROBE_RADIUS_M
+
+
+def test_nokia_probe_refuses_to_pretend_when_it_is_not_configured(sim):
+    client = CamaraClient(NacConfig(mode="simulator"), simulator=sim)
+    with pytest.raises(CamaraError):
+        client.nokia_sandbox_probe()
