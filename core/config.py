@@ -61,6 +61,10 @@ class NacConfig:
     # the sandbox hosts that accept simulator MSISDNs.
     dev_mode: bool = True
     timeout_s: float = 12.0
+    # The value RapidAPI expects in x-rapidapi-host for Nokia's aggregated SDK.
+    # It has to agree with the base URL the SDK ships, or the gateway refuses
+    # the call. Overridable, because Nokia can move the host without asking us.
+    sandbox_host: str = "network-as-code.p-eu.rapidapi.com"
 
     def host(self, api: str) -> str:
         return _HOSTS_DEV[api] if self.dev_mode else _HOSTS_PROD[api]
@@ -92,6 +96,9 @@ class NacConfig:
             rapid_key=key,
             dev_mode=_env_bool("NAC_DEV_MODE", True),
             timeout_s=_env_float("NAC_TIMEOUT_S", 12.0),
+            sandbox_host=(
+                os.getenv("NAC_SANDBOX_HOST") or "network-as-code.p-eu.rapidapi.com"
+            ).strip(),
         )
 
 

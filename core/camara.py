@@ -329,7 +329,7 @@ class CamaraClient:
         }
         try:
             client = NetworkAsCodeApi(
-                rapidapi_host="network-as-code.nokia.rapidapi.com",
+                rapidapi_host=self.config.sandbox_host,
                 api_key=self.config.rapid_key,
                 timeout=self.config.timeout_s,
             )

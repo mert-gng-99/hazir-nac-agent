@@ -165,10 +165,44 @@ def test_nokia_sandbox_uses_the_official_sdk_and_keeps_explicit_provenance(
         "verificationResult": "TRUE",
         "sandboxDevice": "+99999991001",
     }
-    assert calls["init"]["rapidapi_host"] == "network-as-code.nokia.rapidapi.com"
+    # The host header has to agree with the base URL the SDK itself ships,
+    # which is the p-eu RapidAPI gateway, or Nokia refuses the call.
+    assert calls["init"]["rapidapi_host"] == "network-as-code.p-eu.rapidapi.com"
     assert calls["verify"]["device"] == {"phone_number": "+99999991001"}
     assert calls["verify"]["area"]["center"] == {"latitude": 41.0, "longitude": 29.0}
     assert client.describe()["effective_source"] == "nokia-sandbox"
+
+
+def test_nokia_sandbox_host_can_be_overridden_without_a_code_change(
+    sim, monkeypatch
+):
+    """Nokia can move the gateway; an env var must be enough to follow it."""
+    calls = {}
+
+    class FakeLocation:
+        def verify_v1(self, **kwargs):
+            return SimpleNamespace(
+                verification_result="TRUE", match_rate=None, last_location_time=None
+            )
+
+    class FakeNokiaClient:
+        def __init__(self, **kwargs):
+            calls["init"] = kwargs
+            self.location = FakeLocation()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "network_as_code",
+        SimpleNamespace(NetworkAsCodeApi=FakeNokiaClient),
+    )
+    monkeypatch.setenv("NAC_MODE", "nokia-sandbox")
+    monkeypatch.setenv("NAC_RAPIDAPI_KEY", "test-key")
+    monkeypatch.setenv("NAC_SANDBOX_HOST", "network-as-code.example.rapidapi.com")
+    client = CamaraClient(NacConfig.from_env(), simulator=sim)
+    client.location_verify(
+        DEVICE, 41.0, 29.0, 500, sandbox_device_phone="+99999991001"
+    )
+    assert calls["init"]["rapidapi_host"] == "network-as-code.example.rapidapi.com"
 
 
 def test_nokia_sandbox_failure_falls_back_to_the_simulator_and_says_why(
