@@ -85,13 +85,26 @@ NAC_MODE=nokia-sandbox
 NAC_RAPIDAPI_KEY=<your key>
 ```
 
-`nokia-sandbox` calls Nokia's own Location Verification simulator through the
-official `network-as-code` SDK, using the `+9999...` test devices Nokia
-publishes. A case keeps its own line for consent and for the audit trail; only
-the outgoing Nokia call carries the mapped test device, and the answer is
-tagged `"source": "nokia-sandbox"`, so it can never read as a production
-network answer. That SDK needs Python 3.11, which is what the Dockerfile and
-the Render deployment run.
+`nokia-sandbox` turns on one explicit proof: `POST /api/nokia-check`, and the
+**Ask Nokia Network as Code** button beside the consent gate. It makes a real
+CAMARA Location Verification call through the official `network-as-code` SDK,
+asking Nokia about a device Nokia publishes for this purpose, and returns what
+came back tagged `"source": "nokia-sandbox"`.
+
+The shipped scenarios deliberately do not use it. Nokia's test devices sit at
+fixed coordinates in Europe, so asking one about a muster circle on the Red Sea
+coast answers truthfully about the test device and falsely about the case, and
+the free tier rate limits long before eight scenarios finish. So the scenarios
+stay on the deterministic local simulator, which is what makes them
+reproducible and what the test suite asserts.
+
+Requests go to `https://network-as-code.p-eu.apihub.nokia.io` while the host
+header still names the RapidAPI listing; that is the pair Nokia's own console
+prints, and the SDK's built-in default answers 404. Both are overridable with
+`NAC_SANDBOX_BASE_URL` and `NAC_SANDBOX_HOST`. The SDK needs Python 3.11, which
+is what the Dockerfile and the Render deployment run. If the gateway refuses,
+the call falls back to the simulator, says so on `/api/health`, and the header
+badge reports that the last call fell back.
 
 `NAC_MODE=live` and `NAC_MODE=hybrid` are the older direct-gateway adapters,
 kept for completeness. Do not call a hybrid run a live proof: the individual
