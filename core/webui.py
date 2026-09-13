@@ -591,8 +591,13 @@ async function refreshProvenance() {
       net.title = "An evidence row in this run came from Nokia's external sandbox";
       net.className = "badge live";
     } else if (network.mode === "nokia-sandbox" && network.has_credentials) {
-      net.textContent = "Nokia NaC sandbox configured";
-      net.title = "The sandbox is configured; inspect each evidence row for its actual source";
+      net.textContent = network.sandbox_error
+        ? "Nokia NaC sandbox configured, last call fell back"
+        : "Nokia NaC sandbox configured";
+      net.title = network.sandbox_error
+        ? "The sandbox refused the last call, so this run answered from the simulator: "
+          + network.sandbox_error
+        : "The sandbox is configured; inspect each evidence row for its actual source";
       net.className = "badge sim";
     } else if (source === "live") {
       net.textContent = "external gateway evidence";

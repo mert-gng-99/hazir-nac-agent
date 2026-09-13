@@ -123,6 +123,10 @@ class CamaraClient:
         self.consent = consent
         self._client: Optional[httpx.Client] = None
         self.call_log: List[ApiResult] = []
+        # Why the last Nokia sandbox call could not be used. A judged demo must
+        # degrade to the simulator rather than fail, but it must also be able to
+        # say that it did, which is what /api/health reports this through.
+        self.sandbox_error: str = ""
 
     # -- transport -----------------------------------------------------------
 
@@ -185,9 +189,19 @@ class CamaraClient:
         request_body = body or {}
 
         if self._use_nokia_sandbox_location(api, operation, sandbox_device_phone):
-            data, status, source, endpoint, request_body = self._call_nokia_sandbox_location(
-                body or {}, str(sandbox_device_phone)
-            )
+            try:
+                data, status, source, endpoint, request_body = self._call_nokia_sandbox_location(
+                    body or {}, str(sandbox_device_phone)
+                )
+                self.sandbox_error = ""
+            except CamaraError as exc:
+                # A wrong key, a quota, or a gateway outage must not take the
+                # demo down. Fall back to the simulator, label it simulator, and
+                # keep the reason so nobody has to guess why the badge changed.
+                self.sandbox_error = str(exc)[:300]
+                data = self.simulator.respond(api, operation, body or {}, subject=subject)
+                status = 200
+                source = "simulator"
         elif self._use_live():
             data, status, source = self._call_live(
                 api, operation, method, endpoint, body, subject
@@ -733,4 +747,5 @@ class CamaraClient:
             "dev_mode": self.config.dev_mode,
             "has_credentials": self.config.has_credentials,
             "calls_made": len(self.call_log),
+            "sandbox_error": self.sandbox_error,
         }

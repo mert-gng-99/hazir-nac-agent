@@ -171,6 +171,50 @@ def test_nokia_sandbox_uses_the_official_sdk_and_keeps_explicit_provenance(
     assert client.describe()["effective_source"] == "nokia-sandbox"
 
 
+def test_nokia_sandbox_failure_falls_back_to_the_simulator_and_says_why(
+    sim, monkeypatch
+):
+    """A bad key must not take a judged demo down, and must not lie either."""
+
+    class FakeLocation:
+        def verify_v1(self, **kwargs):
+            raise RuntimeError("401 Unauthorized")
+
+    class FakeNokiaClient:
+        def __init__(self, **kwargs):
+            self.location = FakeLocation()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "network_as_code",
+        SimpleNamespace(NetworkAsCodeApi=FakeNokiaClient),
+    )
+    client = CamaraClient(
+        NacConfig(mode="nokia-sandbox", rapid_key="wrong-key"), simulator=sim
+    )
+    result = client.location_verify(
+        DEVICE, 41.0, 29.0, 500, sandbox_device_phone="+99999991001"
+    )
+
+    assert result.source == "simulator"
+    assert client.describe()["effective_source"] == "simulator"
+    assert "sandbox location verification failed" in client.describe()["sandbox_error"]
+    assert "wrong-key" not in client.describe()["sandbox_error"]
+
+
+def test_nokia_sandbox_missing_sdk_falls_back_rather_than_crashing(sim, monkeypatch):
+    """Python 3.10 installs no SDK, so the adapter must simply not be used."""
+    monkeypatch.setitem(sys.modules, "network_as_code", None)
+    client = CamaraClient(
+        NacConfig(mode="nokia-sandbox", rapid_key="test-key"), simulator=sim
+    )
+    result = client.location_verify(
+        DEVICE, 41.0, 29.0, 500, sandbox_device_phone="+99999991001"
+    )
+    assert result.source == "simulator"
+    assert client.describe()["sandbox_error"]
+
+
 def test_nokia_sandbox_never_relabels_an_unsupported_tool(sim):
     client = CamaraClient(
         NacConfig(mode="nokia-sandbox", rapid_key="test-key"), simulator=sim
