@@ -1,0 +1,145 @@
+{
+  "scenarios": 8,
+  "expectations_met": 8,
+  "total_cost_units": 45.0,
+  "cost_if_everything_called": 200.0,
+  "saved_pct": 77.5,
+  "camara_apis": [
+    "number-verification",
+    "location-verification",
+    "device-status",
+    "location-retrieval",
+    "congestion-insights",
+    "geofencing-subscriptions",
+    "quality-on-demand",
+    "network-slice-device-attachment"
+  ],
+  "tools": [
+    "verify_number",
+    "verify_location",
+    "check_reachability",
+    "retrieve_location",
+    "query_congestion",
+    "watch_area",
+    "reserve_quality",
+    "attach_slice"
+  ],
+  "min_calls": 1,
+  "max_calls": 6,
+  "avg_calls": 2.4,
+  "levels_seen": [
+    "breach",
+    "clear",
+    "missing",
+    "notify"
+  ],
+  "per_scenario": [
+    {
+      "id": "muster-accounted",
+      "title": "Worker at the muster point",
+      "level": "clear",
+      "expected": "clear",
+      "met": true,
+      "calls": 1,
+      "spend": 2.0,
+      "apis": [
+        "location-verification"
+      ]
+    },
+    {
+      "id": "muster-wandering",
+      "title": "Out of the zone but not at muster",
+      "level": "notify",
+      "expected": "notify",
+      "met": true,
+      "calls": 2,
+      "spend": 3.0,
+      "apis": [
+        "location-verification",
+        "device-status"
+      ]
+    },
+    {
+      "id": "muster-missing",
+      "title": "Not at muster and unreachable",
+      "level": "missing",
+      "expected": "missing",
+      "met": true,
+      "calls": 4,
+      "spend": 8.0,
+      "apis": [
+        "location-verification",
+        "device-status",
+        "location-retrieval",
+        "congestion"
+      ]
+    },
+    {
+      "id": "muster-missing-saturated",
+      "title": "Missing, and the incident has filled the cell",
+      "level": "missing",
+      "expected": "missing",
+      "met": true,
+      "calls": 6,
+      "spend": 22.0,
+      "apis": [
+        "location-verification",
+        "device-status",
+        "location-retrieval",
+        "congestion",
+        "slice-attach",
+        "qod"
+      ]
+    },
+    {
+      "id": "muster-uncertain",
+      "title": "The network answers PARTIAL at the muster edge",
+      "level": "notify",
+      "expected": "notify",
+      "met": true,
+      "calls": 2,
+      "spend": 3.0,
+      "apis": [
+        "location-verification",
+        "device-status"
+      ]
+    },
+    {
+      "id": "crane-zone-breach",
+      "title": "Inside the crane zone without a ticket",
+      "level": "breach",
+      "expected": "breach",
+      "met": true,
+      "calls": 1,
+      "spend": 2.0,
+      "apis": [
+        "location-verification"
+      ]
+    },
+    {
+      "id": "heat-open-air",
+      "title": "Still in open sun at heat index 46",
+      "level": "notify",
+      "expected": "notify",
+      "met": true,
+      "calls": 1,
+      "spend": 2.0,
+      "apis": [
+        "location-verification"
+      ]
+    },
+    {
+      "id": "induction-enrol",
+      "title": "Induct a new starter",
+      "level": "clear",
+      "expected": "clear",
+      "met": true,
+      "calls": 2,
+      "spend": 3.0,
+      "apis": [
+        "number-verification",
+        "geofencing"
+      ]
+    }
+  ]
+}
