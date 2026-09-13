@@ -8,6 +8,11 @@ Ten thousand workers, many square kilometres, and a headcount that takes an hour
 
 On a giga-project site holding ten thousand workers, an evacuation headcount takes an hour with a clipboard. Hazir gets it from the mobile line each worker already carries - no tag, no beacon, no app - and turns silence into a rescue list with a last known area in the first minutes.
 
+![Every scenario run at once: what each case spent, and what calling every available check on every case would have cost.](snapshots/1-batch-run-and-cost-saving.png)
+
+*Every scenario run at once: what each case spent, and what calling every available check on every case would have cost.*
+
+
 ---
 
 ## Quick start
@@ -33,6 +38,16 @@ explains every decision with the network answers behind it.
 - **8 CAMARA APIs** on the Nokia Network-as-Code platform
 - **77.5% cheaper** than calling every available check on every case
 - **1 to 6 calls** per case, depending on what the case deserves
+
+## What it looks like
+
+![One decision, with the calls the agent chose to buy and the network answer behind each one.](snapshots/2-decision-with-evidence-trail.png)
+
+*One decision, with the calls the agent chose to buy and the network answer behind each one.*
+
+![Consent withdrawn. The same case now makes zero CAMARA calls, refused in the transport layer before a request is built.](snapshots/3-consent-withdrawn-zero-calls.png)
+
+*Consent withdrawn. The same case now makes zero CAMARA calls, refused in the transport layer before a request is built.*
 
 ## Scenarios
 
