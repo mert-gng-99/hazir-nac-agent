@@ -131,7 +131,14 @@ def _check_roaming(client: CamaraClient, ctx: ToolContext, args: Dict[str, Any])
 def _verify_location(client: CamaraClient, ctx: ToolContext, args: Dict[str, Any]) -> ApiResult:
     lat, lon = ctx.require_point()
     radius = ctx.radius_m
-    return client.location_verify(ctx.device, float(lat), float(lon), radius)
+    sandbox_device = ctx.params.get("nokia_sandbox_phone_number")
+    return client.location_verify(
+        ctx.device,
+        float(lat),
+        float(lon),
+        radius,
+        sandbox_device_phone=(str(sandbox_device) if sandbox_device else None),
+    )
 
 
 def _retrieve_location(client: CamaraClient, ctx: ToolContext, args: Dict[str, Any]) -> ApiResult:

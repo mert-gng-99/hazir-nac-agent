@@ -22,6 +22,24 @@ OPEN_AIR_RADIUS_M = 500
 
 _M_PER_DEG_LAT = 111320.0
 
+# Nokia's documented Location Verification simulator cases. These are public
+# test devices, not worker identities. A case keeps its company line for
+# consent/audit purposes; only the opt-in Nokia sandbox adapter uses this map.
+NOKIA_SANDBOX_LOCATION_DEVICES = {
+    "+966580000501": "+99999991001",  # TRUE: inside muster
+    "+966580000502": "+99999991000",  # FALSE: outside muster
+    "+966580000503": "+99999991000",  # FALSE: then local reachability ladder
+    "+966580000504": "+99999991000",  # FALSE: saturated incident ladder
+    "+966580000505": "+99999991002",  # PARTIAL: manual review
+    "+966580000506": "+99999991001",  # TRUE: inside crane zone
+    "+966580000507": "+99999991001",  # TRUE: inside open-air zone
+}
+
+
+def _nokia_sandbox_params(subject: str) -> dict:
+    device = NOKIA_SANDBOX_LOCATION_DEVICES.get(subject)
+    return {"nokia_sandbox_phone_number": device} if device else {}
+
 
 def _from(point: tuple, metres: float) -> tuple:
     return (point[0] + metres / _M_PER_DEG_LAT, point[1])
@@ -124,7 +142,11 @@ def _evacuation(subject: str, worker: str, badge: str, language: str, minutes: i
         latitude=MUSTER[0],
         longitude=MUSTER[1],
         radius_m=MUSTER_RADIUS_M,
-        params={"slice_id": "site-emergency-slice", "qos_profile": "QOS_L"},
+        params={
+            "slice_id": "site-emergency-slice",
+            "qos_profile": "QOS_L",
+            **_nokia_sandbox_params(subject),
+        },
     )
 
 
@@ -242,6 +264,7 @@ SCENARIOS = [
             latitude=CRANE_ZONE[0],
             longitude=CRANE_ZONE[1],
             radius_m=CRANE_RADIUS_M,
+            params=_nokia_sandbox_params(LINE_CRANE_BREACH.msisdn),
         ),
     ),
     Scenario(
@@ -273,6 +296,7 @@ SCENARIOS = [
             latitude=OPEN_AIR[0],
             longitude=OPEN_AIR[1],
             radius_m=OPEN_AIR_RADIUS_M,
+            params=_nokia_sandbox_params(LINE_HEAT.msisdn),
         ),
     ),
     Scenario(

@@ -9,5 +9,9 @@ python-dotenv>=1.0
 # The [google] extra installs the official google-genai provider dependency.
 pydantic-ai-slim[google]==2.43.0
 
+# Optional, official Nokia NaC Location Verification sandbox adapter.
+# Docker uses Python 3.11; local simulator-only runs remain Python 3.10 compatible.
+network-as-code==10.0.0; python_version >= "3.11"
+
 # Tests
 pytest>=8.0

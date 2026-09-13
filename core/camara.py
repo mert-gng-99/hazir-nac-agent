@@ -5,10 +5,10 @@ on the Network-as-Code portal. Two things make it different from a thin
 requests wrapper:
 
 1.  Every call returns an :class:`ApiResult` carrying provenance - which API,
-    which endpoint, how long it took, whether the answer came from the live
-    network or the simulator, and a digest of the request. The agent's evidence
-    trail is built out of these, so a decision can always be traced back to the
-    exact network answers behind it.
+    which endpoint, how long it took, whether the answer came from the local
+    simulator, the Nokia NaC sandbox, or a legacy direct gateway, and a digest
+    of the request. The agent's evidence trail is built out of these, so a
+    decision can always be traced back to the exact network answers behind it.
 
 2.  Calls route through a consent gate. CAMARA location and identity APIs are
     only lawful with the consent of the line owner, so an ungranted call is
@@ -87,7 +87,7 @@ class ApiResult:
     operation: str
     endpoint: str
     data: Dict[str, Any]
-    source: str                      # "live" | "simulator"
+    source: str                      # "nokia-sandbox" | "live" | "simulator"
     latency_ms: int
     status: int = 200
     request_digest: str = ""
@@ -139,6 +139,23 @@ class CamaraClient:
     def _use_live(self) -> bool:
         return self.config.mode in {"live", "hybrid"} and self.config.has_credentials
 
+    def _use_nokia_sandbox_location(
+        self, api: str, operation: str, sandbox_device_phone: Optional[str]
+    ) -> bool:
+        """Route only mapped location checks to Nokia's current test gateway.
+
+        The official simulator is deliberately narrow here. We do not pretend
+        that an old raw endpoint for every family is current Nokia evidence, and
+        we never substitute a scenario's company line for a real subscriber.
+        """
+        return bool(
+            self.config.nokia_sandbox_enabled
+            and api == "location-verification"
+            and operation == "verify"
+            and sandbox_device_phone
+            and sandbox_device_phone.startswith("+9999")
+        )
+
     def _check_consent(self, scope: str, subject: Optional[str]) -> None:
         if self.consent is None or subject is None:
             return
@@ -158,14 +175,20 @@ class CamaraClient:
         scope: str = "",
         subject: Optional[str] = None,
         cost_units: float = 0.0,
+        sandbox_device_phone: Optional[str] = None,
     ) -> ApiResult:
         if scope:
             self._check_consent(scope, subject)
 
         started = time.perf_counter()
         endpoint = API_PREFIX.get(api, "") + path
+        request_body = body or {}
 
-        if self._use_live():
+        if self._use_nokia_sandbox_location(api, operation, sandbox_device_phone):
+            data, status, source, endpoint, request_body = self._call_nokia_sandbox_location(
+                body or {}, str(sandbox_device_phone)
+            )
+        elif self._use_live():
             data, status, source = self._call_live(
                 api, operation, method, endpoint, body, subject
             )
@@ -182,7 +205,7 @@ class CamaraClient:
             source=source,
             latency_ms=int((time.perf_counter() - started) * 1000),
             status=status,
-            request_digest=_digest(body or {}),
+            request_digest=_digest(request_body),
             cost_units=cost_units,
         )
         self.call_log.append(result)
@@ -244,6 +267,99 @@ class CamaraClient:
         if not isinstance(payload, dict):
             payload = {"result": payload}
         return payload, response.status_code, "live"
+
+    def _call_nokia_sandbox_location(
+        self, body: Dict[str, Any], sandbox_device_phone: str
+    ) -> Tuple[Dict[str, Any], int, str, str, Dict[str, Any]]:
+        """Call Nokia's current SDK for one official simulated device.
+
+        Nokia documents ``+9999`` identifiers as simulator devices and exposes
+        Location Verification through the aggregated current SDK. This adapter
+        is opt-in and lazy-imported so ordinary Python 3.10 simulator tests do
+        not gain an SDK dependency.
+        """
+        try:
+            from network_as_code import NetworkAsCodeApi
+        except ImportError as exc:
+            raise CamaraError(
+                "Nokia NaC sandbox requires network-as-code on Python 3.11+",
+                api="location-verification",
+                status=0,
+            ) from exc
+
+        area = dict(body.get("area") or {})
+        center = dict(area.get("center") or {})
+        if not {"latitude", "longitude"}.issubset(center) or "radius" not in area:
+            raise CamaraError(
+                "location verification requires a protected circle geometry",
+                api="location-verification",
+                status=400,
+            )
+
+        request_body = {
+            "device": {"phoneNumber": sandbox_device_phone},
+            "area": {
+                "areaType": "CIRCLE",
+                "center": {
+                    "latitude": center["latitude"],
+                    "longitude": center["longitude"],
+                },
+                "radius": area["radius"],
+            },
+            "maxAge": body.get("maxAge"),
+        }
+        sdk_area = {
+            "area_type": "CIRCLE",
+            "center": request_body["area"]["center"],
+            "radius": request_body["area"]["radius"],
+        }
+        try:
+            client = NetworkAsCodeApi(
+                rapidapi_host="network-as-code.nokia.rapidapi.com",
+                api_key=self.config.rapid_key,
+                timeout=self.config.timeout_s,
+            )
+            response = client.location.verify_v1(
+                device={"phone_number": sandbox_device_phone},
+                area=sdk_area,
+                max_age=body.get("maxAge"),
+                correlator="hazir-" + _digest(request_body),
+            )
+        except Exception as exc:  # SDK-specific errors must not expose secrets.
+            raise CamaraError(
+                "Nokia NaC sandbox location verification failed (%s)" % type(exc).__name__,
+                api="location-verification",
+                status=0,
+            ) from exc
+
+        result = str(getattr(response, "verification_result", "")).upper()
+        if result not in {"TRUE", "FALSE", "PARTIAL", "UNKNOWN"}:
+            raise CamaraError(
+                "Nokia NaC sandbox returned an invalid verification result",
+                api="location-verification",
+                status=502,
+            )
+        data: Dict[str, Any] = {
+            "verificationResult": result,
+            "sandboxDevice": sandbox_device_phone,
+        }
+        match_rate = getattr(response, "match_rate", None)
+        if match_rate is not None:
+            data["matchRate"] = match_rate
+        last_location_time = getattr(response, "last_location_time", None)
+        if last_location_time is not None:
+            data["lastLocationTime"] = (
+                last_location_time.isoformat()
+                if hasattr(last_location_time, "isoformat")
+                else str(last_location_time)
+            )
+        return (
+            data,
+            200,
+            "nokia-sandbox",
+            "/location-verification/v1/verify",
+            request_body,
+        )
 
     # -- Digital identity and anti-fraud ------------------------------------
 
@@ -324,6 +440,8 @@ class CamaraClient:
         longitude: float,
         radius_m: int,
         max_age_s: int = 60,
+        *,
+        sandbox_device_phone: Optional[str] = None,
     ) -> ApiResult:
         """CAMARA location-verification: is the line inside this circle?
 
@@ -347,6 +465,7 @@ class CamaraClient:
             scope="location:verify",
             subject=device.phone_number,
             cost_units=2.0,
+            sandbox_device_phone=sandbox_device_phone,
         )
 
     def location_retrieve(self, device: Device, max_age_s: int = 60) -> ApiResult:
@@ -599,7 +718,10 @@ class CamaraClient:
     # -- diagnostics ---------------------------------------------------------
 
     def describe(self) -> Dict[str, Any]:
-        if not self._use_live():
+        evidence_sources = {item.source for item in self.call_log}
+        if "nokia-sandbox" in evidence_sources:
+            source = "nokia-sandbox"
+        elif not self._use_live():
             source = "simulator"
         elif self.config.mode == "hybrid":
             source = "hybrid"

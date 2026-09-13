@@ -76,20 +76,27 @@ planner in charge, so nothing starts spending on a model just because a key is
 present in the environment. That deterministic planner runs the same escalation
 ladder, which is why the prototype works offline and the tests are stable.
 
-## Point it at the real Nokia gateway (optional)
+## Point it at Nokia Network as Code (optional)
 
 Self-register at **networkascode.nokia.io**, then in `.env`:
 
 ```
-NAC_MODE=live
+NAC_MODE=nokia-sandbox
 NAC_RAPIDAPI_KEY=<your key>
-NAC_DEV_MODE=true
 ```
 
-`NAC_DEV_MODE=true` targets the sandbox hosts that answer for simulator
-MSISDNs. Use `NAC_MODE=hybrid` to keep a demo available if a live call fails,
-but do not call that a live proof: the individual evidence record must show
-`"source": "live"`. A hybrid fallback is visibly tagged `"simulator"`.
+`nokia-sandbox` calls Nokia's own Location Verification simulator through the
+official `network-as-code` SDK, using the `+9999...` test devices Nokia
+publishes. A case keeps its own line for consent and for the audit trail; only
+the outgoing Nokia call carries the mapped test device, and the answer is
+tagged `"source": "nokia-sandbox"`, so it can never read as a production
+network answer. That SDK needs Python 3.11, which is what the Dockerfile and
+the Render deployment run.
+
+`NAC_MODE=live` and `NAC_MODE=hybrid` are the older direct-gateway adapters,
+kept for completeness. Do not call a hybrid run a live proof: the individual
+evidence record must show `"source": "live"`, and a fallback is visibly tagged
+`"simulator"`.
 
 ## Prove the deployed demonstration
 

@@ -181,6 +181,7 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .tag.simulator { color: var(--watch); border-color: color-mix(in srgb, var(--watch) 40%, transparent); }
 .tag.live { color: var(--calm); border-color: color-mix(in srgb, var(--calm) 40%, transparent); }
+.tag.nokia-sandbox { color: var(--calm); border-color: color-mix(in srgb, var(--calm) 40%, transparent); }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
 
 /* steps */
@@ -582,10 +583,26 @@ async function refreshStats() {
 async function refreshProvenance() {
   try {
     const h = await fetch("/api/health").then((r) => r.json());
-    const source = (h.network || {}).effective_source || "simulator";
+    const network = h.network || {};
+    const source = network.effective_source || "simulator";
     const net = $("#badge-network");
-    net.textContent = source === "live" ? "live network" : source + " answers";
-    net.className = "badge " + (source === "live" ? "live" : "sim");
+    if (source === "nokia-sandbox") {
+      net.textContent = "Nokia NaC sandbox evidence";
+      net.title = "An evidence row in this run came from Nokia's external sandbox";
+      net.className = "badge live";
+    } else if (network.mode === "nokia-sandbox" && network.has_credentials) {
+      net.textContent = "Nokia NaC sandbox configured";
+      net.title = "The sandbox is configured; inspect each evidence row for its actual source";
+      net.className = "badge sim";
+    } else if (source === "live") {
+      net.textContent = "external gateway evidence";
+      net.title = "An external gateway returned this evidence; inspect the source row";
+      net.className = "badge live";
+    } else {
+      net.textContent = source + " answers";
+      net.title = "Where the CAMARA answers in this run came from";
+      net.className = "badge sim";
+    }
 
     const a = h.agent || {};
     const planner = $("#badge-planner");
@@ -774,8 +791,8 @@ _PAGE = """<!doctype html>
   </div>
   <div class="badges">
     <span class="badge" id="status"></span>
-    <span class="badge" id="badge-network" title="Where the CAMARA answers come from"></span>
-    <span class="badge" id="badge-planner" title="Which planner is deciding"></span>
+    <span class="badge" id="badge-network" role="status" aria-live="polite" aria-atomic="true" title="Where the CAMARA answers come from"></span>
+    <span class="badge" id="badge-planner" role="status" aria-live="polite" aria-atomic="true" title="Which planner is deciding"></span>
     <span class="badge">__API_COUNT__ CAMARA APIs</span>
     <span class="badge on">Nokia Network as Code</span>
   </div>

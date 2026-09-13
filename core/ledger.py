@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     budget_spent REAL NOT NULL DEFAULT 0,
     budget_limit REAL NOT NULL DEFAULT 0,
     planner      TEXT NOT NULL DEFAULT 'policy',
+    planner_error TEXT NOT NULL DEFAULT '',
     apis_used    TEXT NOT NULL DEFAULT '[]',
     evidence     TEXT NOT NULL DEFAULT '[]',
     skipped      TEXT NOT NULL DEFAULT '[]',
@@ -70,6 +71,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _migrate_decisions_schema(conn: sqlite3.Connection) -> None:
+    """Add additive decision fields to databases created by older releases."""
+    columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(decisions)")}
+    if "planner_error" not in columns:
+        try:
+            conn.execute(
+                "ALTER TABLE decisions ADD COLUMN planner_error TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            # Another process may have completed this additive migration first.
+            current = {
+                str(row["name"]) for row in conn.execute("PRAGMA table_info(decisions)")
+            }
+            if "planner_error" not in current:
+                raise
+
+
 @dataclass
 class LedgerStats:
     decisions: int
@@ -91,6 +109,7 @@ class DecisionLedger:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(SCHEMA)
+            _migrate_decisions_schema(self._conn)
             try:
                 self._conn.execute("PRAGMA journal_mode=WAL")
             except sqlite3.DatabaseError:
@@ -111,9 +130,9 @@ class DecisionLedger:
                 """
                 INSERT INTO decisions (
                     case_id, subject, kind, level, action, rationale, confidence,
-                    budget_spent, budget_limit, planner, apis_used, evidence,
-                    skipped, steps, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    budget_spent, budget_limit, planner, planner_error, apis_used,
+                    evidence, skipped, steps, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     payload.get("case_id", ""),
@@ -126,6 +145,7 @@ class DecisionLedger:
                     float(payload.get("budget_spent") or 0),
                     float(payload.get("budget_limit") or 0),
                     payload.get("planner", "policy"),
+                    payload.get("planner_error", ""),
                     json.dumps(payload.get("apis_used", [])),
                     json.dumps(payload.get("evidence", []), default=str),
                     json.dumps(payload.get("skipped", []), default=str),
@@ -221,6 +241,7 @@ def _row_to_decision(row: sqlite3.Row) -> Dict[str, Any]:
         "budget_spent": row["budget_spent"],
         "budget_limit": row["budget_limit"],
         "planner": row["planner"],
+        "planner_error": row["planner_error"] or "",
         "apis_used": json.loads(row["apis_used"] or "[]"),
         "evidence": json.loads(row["evidence"] or "[]"),
         "skipped": json.loads(row["skipped"] or "[]"),

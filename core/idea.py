@@ -148,6 +148,10 @@ class IdeaSpec:
         facts = dict(template.facts)
         facts.update(overrides.pop("facts", None) or {})
         params = dict(template.params)
+        # A product may map a declared scenario to an official Nokia sandbox
+        # test device. Never carry that mapping to an arbitrary ad-hoc line.
+        if subject != template.subject:
+            params.pop("nokia_sandbox_phone_number", None)
         params.update(overrides.pop("params", None) or {})
 
         case = Case(

@@ -6,9 +6,11 @@ services:
     plan: free
     healthCheckPath: /api/health
     envVars:
-      # Simulator mode needs no credentials, so a blueprint deploy just works.
+      # With no key the app falls back to its deterministic simulator, so a
+      # blueprint deploy still just works. Add NAC_RAPIDAPI_KEY to switch on
+      # the official Nokia NaC sandbox adapter.
       - key: NAC_MODE
-        value: simulator
+        value: nokia-sandbox
       - key: NAC_DEV_MODE
         value: "true"
       - key: DB_PATH

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 
 from core.agent import LlmPlanner
 from core.config import AgentConfig, AppConfig, NacConfig
+from core.ledger import DecisionLedger
 from core.server import create_app
 from idea import SPEC
 
@@ -28,6 +31,8 @@ def test_dashboard_renders(client):
     # The spec payload must be inlined or the page is blank on load.
     assert "window.__SPEC__" in response.text
     assert "Planner fallback:" in response.text
+    assert "Nokia NaC sandbox evidence" in response.text
+    assert 'role="status"' in response.text
 
 
 def test_health_reports_mode_and_planner(client):
@@ -93,6 +98,68 @@ def test_health_never_presents_a_model_fallback_as_gemini(tmp_path, monkeypatch)
         assert after["last_decision_planner"] == "policy-fallback"
         assert "deliberately unavailable provider" in after["last_decision_model_error"]
         assert after["model_verified"] is False
+
+        stored = test_client.get("/api/decisions/" + decision["case_id"]).json()
+        assert stored["planner_error"] == decision["planner_error"]
+
+
+def test_ledger_migrates_legacy_database_and_persists_planner_error(tmp_path):
+    """An existing release database gains the provenance column without data loss."""
+    db_path = tmp_path / "legacy-ledger.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id TEXT NOT NULL, subject TEXT NOT NULL, kind TEXT NOT NULL,
+                level TEXT NOT NULL, action TEXT NOT NULL, rationale TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0, budget_spent REAL NOT NULL DEFAULT 0,
+                budget_limit REAL NOT NULL DEFAULT 0, planner TEXT NOT NULL DEFAULT 'policy',
+                apis_used TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]',
+                skipped TEXT NOT NULL DEFAULT '[]', steps TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO decisions (
+                case_id, subject, kind, level, action, rationale, confidence,
+                budget_spent, budget_limit, planner, apis_used, evidence,
+                skipped, steps, created_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "legacy-case", "+966500000000", "test", "CLEAR", "continue",
+                "stored before migration", 1, 0, 1, "policy", "[]", "[]", "[]",
+                "[]", "2026-01-01T00:00:00+00:00",
+            ),
+        )
+
+    ledger = DecisionLedger(str(db_path))
+    try:
+        legacy = ledger.get_case("legacy-case")
+        assert legacy and legacy["planner_error"] == ""
+
+        ledger.record(
+            {
+                "case_id": "fallback-case",
+                "subject": "+966500000001",
+                "kind": "test",
+                "level": "REVIEW",
+                "action": "check manually",
+                "rationale": "model unavailable",
+                "confidence": 0.5,
+                "budget_spent": 0,
+                "budget_limit": 1,
+                "planner": "policy-fallback",
+                "planner_error": "ModelHTTPError: 429 quota exceeded",
+            }
+        )
+        stored = ledger.get_case("fallback-case")
+        assert stored and stored["planner_error"] == "ModelHTTPError: 429 quota exceeded"
+    finally:
+        ledger.close()
 
 
 def test_unknown_scenario_is_a_404(client):

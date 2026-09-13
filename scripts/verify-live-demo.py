@@ -6,8 +6,8 @@ Usage:
 
 This sends one normal demo request. It succeeds only if that decision was
 actually planned by Gemini (not policy fallback) and contains at least one
-evidence record tagged ``source: live``. It never prints API keys or raw model
-prompts.
+evidence record that came from Nokia, tagged ``source: live`` or
+``source: nokia-sandbox``. It never prints API keys or raw model prompts.
 """
 
 from __future__ import annotations
@@ -70,12 +70,14 @@ def main(argv: list[str]) -> int:
     # have one without the other. Reporting them together hides which half is
     # actually missing.
     print("AGENT READY: Gemini planned %s and the runtime accepted its decision." % scenario_id)
-    if "live" in sources:
-        print("NETWORK READY: Nokia NaC returned live evidence (%s)." % ", ".join(sources))
+    nokia = [s for s in ("live", "nokia-sandbox") if s in sources]
+    if nokia:
+        print("NETWORK READY: Nokia NaC answered from %s (evidence: %s)."
+              % (" and ".join(nokia), ", ".join(sources)))
         return 0
     print(
-        "NETWORK NOT PROVEN: evidence came from %s. Set NAC_MODE=hybrid and "
-        "NAC_RAPIDAPI_KEY on the deployment to show live CAMARA answers too."
+        "NETWORK NOT PROVEN: evidence came from %s. Set NAC_MODE=nokia-sandbox "
+        "and NAC_RAPIDAPI_KEY on the deployment, then run a mapped scenario."
         % ", ".join(sources)
     )
     return 2

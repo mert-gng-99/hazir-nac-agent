@@ -1,15 +1,17 @@
 """Runtime configuration for the Network-as-Code agent platform.
 
-Everything is environment driven so the same bundle runs three ways:
+Everything is environment driven so the same bundle runs four ways:
 
   NAC_MODE=simulator   no credentials needed, deterministic network responses
-  NAC_MODE=live        real Nokia Network-as-Code calls over the RapidAPI gateway
+  NAC_MODE=nokia-sandbox  official Nokia NaC simulator through its current SDK
+  NAC_MODE=live        legacy direct Nokia gateway adapter (not the submission path)
   NAC_MODE=hybrid      live where credentials allow, simulator for the rest
 
-The simulator exists because the hackathon organisers recommend simulator
-numbers, and because a judged demo must never depend on a third party being
-awake. Every simulated response carries ``"source": "simulator"`` so nothing
-can quietly pass itself off as a real network answer.
+``nokia-sandbox`` is intentionally separate from a production network. It uses
+Nokia's published ``+9999…`` test devices through the external NaC gateway and
+labels that evidence ``nokia-sandbox``. The local deterministic simulator is
+still useful for repeatable eight-scenario demos and is always labelled
+``simulator``.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Literal
 
-Mode = Literal["simulator", "live", "hybrid"]
+Mode = Literal["simulator", "nokia-sandbox", "live", "hybrid"]
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -70,15 +72,20 @@ class NacConfig:
     def has_credentials(self) -> bool:
         return bool(self.rapid_key)
 
+    @property
+    def nokia_sandbox_enabled(self) -> bool:
+        """Whether the current official Nokia test gateway is usable."""
+        return self.mode == "nokia-sandbox" and self.has_credentials
+
     @classmethod
     def from_env(cls) -> "NacConfig":
         mode = (os.getenv("NAC_MODE") or "simulator").strip().lower()
-        if mode not in {"simulator", "live", "hybrid"}:
+        if mode not in {"simulator", "nokia-sandbox", "live", "hybrid"}:
             mode = "simulator"
         key = (os.getenv("NAC_RAPIDAPI_KEY") or os.getenv("NAC_API_KEY") or "").strip()
-        # Asking for live mode without a key is a configuration mistake, not a
-        # reason to crash a demo: fall back and let /api/health report it.
-        if mode == "live" and not key:
+        # Asking for an external gateway without a key is a configuration
+        # mistake, not a reason to crash a judged demo. Fall back visibly.
+        if mode in {"live", "nokia-sandbox"} and not key:
             mode = "simulator"
         return cls(
             mode=mode,  # type: ignore[arg-type]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
+import sys
 
 import httpx
 import pytest
@@ -119,6 +121,62 @@ def test_live_mode_without_credentials_falls_back_to_simulator():
     config = NacConfig(mode="live", rapid_key="")
     client = CamaraClient(config, simulator=NetworkSimulator())
     assert client.describe()["effective_source"] == "simulator"
+
+
+def test_nokia_sandbox_uses_the_official_sdk_and_keeps_explicit_provenance(
+    sim, monkeypatch
+):
+    """Only the opt-in +9999 Location Verification path is external NaC proof."""
+    calls = {}
+
+    class FakeLocation:
+        def verify_v1(self, **kwargs):
+            calls["verify"] = kwargs
+            return SimpleNamespace(
+                verification_result="TRUE",
+                match_rate=None,
+                last_location_time=None,
+            )
+
+    class FakeNokiaClient:
+        def __init__(self, **kwargs):
+            calls["init"] = kwargs
+            self.location = FakeLocation()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "network_as_code",
+        SimpleNamespace(NetworkAsCodeApi=FakeNokiaClient),
+    )
+    client = CamaraClient(
+        NacConfig(mode="nokia-sandbox", rapid_key="test-key"), simulator=sim
+    )
+    result = client.location_verify(
+        DEVICE,
+        41.0,
+        29.0,
+        500,
+        sandbox_device_phone="+99999991001",
+    )
+
+    assert result.source == "nokia-sandbox"
+    assert result.endpoint == "/location-verification/v1/verify"
+    assert result.data == {
+        "verificationResult": "TRUE",
+        "sandboxDevice": "+99999991001",
+    }
+    assert calls["init"]["rapidapi_host"] == "network-as-code.nokia.rapidapi.com"
+    assert calls["verify"]["device"] == {"phone_number": "+99999991001"}
+    assert calls["verify"]["area"]["center"] == {"latitude": 41.0, "longitude": 29.0}
+    assert client.describe()["effective_source"] == "nokia-sandbox"
+
+
+def test_nokia_sandbox_never_relabels_an_unsupported_tool(sim):
+    client = CamaraClient(
+        NacConfig(mode="nokia-sandbox", rapid_key="test-key"), simulator=sim
+    )
+    result = client.number_verification_verify(DEVICE)
+    assert result.source == "simulator"
 
 
 def test_hybrid_http_failure_is_truthfully_tagged_and_uses_the_operation(sim):
